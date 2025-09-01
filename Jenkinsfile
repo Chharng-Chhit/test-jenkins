@@ -41,7 +41,6 @@ pipeline {
             }
         }
 
-
         stage('Push Docker Image to ECR') {
             agent {
                 docker {
