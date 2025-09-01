@@ -62,15 +62,27 @@ pipeline {
         stage('Deploy to ECS') {
             agent {
                 docker {
-                    image 'amazon/aws-cli:latest'  // Use a pre-built AWS CLI Docker image for ECS deployment
-                    args '-v /var/run/docker.sock:/var/run/docker.sock --entrypoint=""'  // Optional if needed by AWS CLI
+                    image 'amazon/aws-cli:latest'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock --entrypoint=""'
                 }
             }
             steps {
                 script {
                     echo "Deploying Image to ECS..."
                     withAWS(credentials: 'awscreds', region: "${region}") {
-                        sh 'aws ecs update-service --cluster ${cluster} --service ${service} --force-new-deployment'
+                        // Check if cluster exists, create if not
+                        def clusterExists = sh(
+                            script: "aws ecs describe-clusters --clusters ${cluster} --region ${region} | grep '\"status\": \"ACTIVE\"'",
+                            returnStatus: true
+                        )
+                        if (clusterExists != 0) {
+                            echo "Cluster '${cluster}' does not exist. Creating..."
+                            sh "aws ecs create-cluster --cluster-name ${cluster} --region ${region}"
+                        } else {
+                            echo "Cluster '${cluster}' exists."
+                        }
+                        // Update service
+                        sh "aws ecs update-service --cluster ${cluster} --service ${service} --force-new-deployment --region ${region}"
                     }
                 }
             }
