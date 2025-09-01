@@ -81,6 +81,43 @@ pipeline {
                         } else {
                             echo "Cluster '${cluster}' exists."
                         }
+
+                        // Check if task definition exists, create default if not
+                        def taskDefName = "${service}-task"
+                        def taskDefExists = sh(
+                            script: "aws ecs describe-task-definition --task-definition ${taskDefName} --region ${region}",
+                            returnStatus: true
+                        )
+                        if (taskDefExists != 0) {
+                            echo "Task definition '${taskDefName}' does not exist. Creating default..."
+                            sh """
+                            aws ecs register-task-definition \
+                                --family ${taskDefName} \
+                                --network-mode awsvpc \
+                                --requires-compatibilities FARGATE \
+                                --cpu '256' \
+                                --memory '512' \
+                                --execution-role-arn arn:aws:iam::${repoUri.split('\\.')[0]}:role/ecsTaskExecutionRole \
+                                --container-definitions '[
+                                    {
+                                        "name": "${service}",
+                                        "image": "${repoRegistryUrl}/webform:latest",
+                                        "essential": true,
+                                        "portMappings": [
+                                            {
+                                                "containerPort": 80,
+                                                "hostPort": 80,
+                                                "protocol": "tcp"
+                                            }
+                                        ]
+                                    }
+                                ]' \
+                                --region ${region}
+                            """
+                        } else {
+                            echo "Task definition '${taskDefName}' exists."
+                        }
+
                         // Update service
                         sh "aws ecs update-service --cluster ${cluster} --service ${service} --force-new-deployment --region ${region}"
                     }
