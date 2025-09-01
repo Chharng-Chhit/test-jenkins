@@ -42,23 +42,23 @@ pipeline {
         }
 
 
-        // stage('Push Docker Image to ECR') {
-        //     agent {
-        //         docker {
-        //             image 'docker:latest'
-        //             args '-v /var/run/docker.sock:/var/run/docker.sock'  // Mount Docker socket
-        //         }
-        //     }
-        //     steps {
-        //         script {
-        //             echo "Pushing Docker Image to ECR..."
-        //             docker.withRegistry(repoRegistryUrl, registryCreds) {
-        //                 dockerImage.push("$BUILD_NUMBER")
-        //                 dockerImage.push('latest')
-        //             }
-        //         }
-        //     }
-        // }
+        stage('Push Docker Image to ECR') {
+            agent {
+                docker {
+                    image 'docker:latest'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock'  // Mount Docker socket
+                }
+            }
+            steps {
+                script {
+                    echo "Pushing Docker Image to ECR..."
+                    docker.withRegistry(repoRegistryUrl, registryCreds) {
+                        dockerImage.push("$BUILD_NUMBER")
+                        dockerImage.push('latest')
+                    }
+                }
+            }
+        }
 
         // stage('Deploy to ECS') {
         //     agent {
