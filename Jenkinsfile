@@ -1,79 +1,51 @@
 pipeline {
-    agent none  // No global agent, each stage will define its own
+    agent any
+
     environment {
-        DOCKER_CONFIG = '/tmp/.docker'  // Set to a directory with write access
-        repoUri = "672763004565.dkr.ecr.ap-southeast-1.amazonaws.com/webform"
-        repoRegistryUrl = "https://672763004565.dkr.ecr.ap-southeast-1.amazonaws.com"
-        registryCreds = 'ecr:ap-southeast-1:awscreds'
-        cluster = "webform"
-        service = "webform-svc"
-        region = 'ap-southeast-1'
+        AWS_ACCOUNT_ID = "672763004565"
+        AWS_DEFAULT_REGION = "ap-southeast-1"
+        IMAGE_REPO_NAME = "metabase-clickhouse"
+        IMAGE_TAG = "latest"
+        REPOSITORY_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}"
     }
 
     stages {
-        stage('Docker Test') {
-            agent {
-                docker {
-                    image 'docker:latest'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'  // Mount Docker socket
-                }
+        stage('Checkout Code') {
+            steps {
+                // This step is optional since you are pulling a public image
+                // git 'https://your-git-repository.com/metabase-clickhouse.git'
             }
+        }
+
+        stage('Pull and Tag Docker Image') {
             steps {
                 script {
-                    sh 'docker ps'
+                    // Pull the image from Docker Hub
+                    sh "docker pull metabase/metabase:latest"
+                    // Tag the image for ECR
+                    sh "docker tag metabase/metabase:latest ${REPOSITORY_URI}:${IMAGE_TAG}"
                 }
             }
         }
 
-        stage('Build Docker Image') {
-            agent {
-                docker {
-                    image 'docker:latest'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'  // Mount Docker socket
-                }
-            }
+        stage('Push Image to ECR') {
             steps {
                 script {
-                    echo 'Building Docker Image from Dockerfile...'
-                    sh 'mkdir -p /tmp/.docker'  // Ensure the directory exists
-                    dockerImage = docker.build(repoUri + ":$BUILD_NUMBER")
+                    // Log in to ECR
+                    sh """
+                        aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
+                        docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+                    """
+                    // Push the image to ECR
+                    sh "docker push ${REPOSITORY_URI}:${IMAGE_TAG}"
                 }
             }
         }
+    }
 
-        stage('Push Docker Image to ECR') {
-            agent {
-                docker {
-                    image 'docker:latest'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'  // Mount Docker socket
-                }
-            }
-            steps {
-                script {
-                    echo "Pushing Docker Image to ECR..."
-                    docker.withRegistry(repoRegistryUrl, registryCreds) {
-                        dockerImage.push("$BUILD_NUMBER")
-                        dockerImage.push('latest')
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to ECS') {
-            agent {
-                docker {
-                    image 'amazon/aws-cli:latest'  // Use a pre-built AWS CLI Docker image for ECS deployment
-                    args '-v /var/run/docker.sock:/var/run/docker.sock --entrypoint=""'  // Optional if needed by AWS CLI
-                }
-            }
-            steps {
-                script {
-                    echo "Deploying Image to ECS..."
-                    withAWS(credentials: 'awscreds', region: "${region}") {
-                        sh 'aws ecs update-service --cluster ${cluster} --service ${service} --force-new-deployment'
-                    }
-                }
-            }
+    post {
+        always {
+            cleanWs()
         }
     }
 }
